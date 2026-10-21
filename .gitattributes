@@ -1,0 +1,34 @@
+# Replace $Id$ strings with 40-character hexadecimal blob object name.
+/ext/ext_skel.php               ident
+/ext/phar/phar/pharcommand.inc  ident
+/ext/dba/libinifile/inifile.c   ident
+/ext/dba/libflatfile/flatfile.c ident
+/ext/dba/libcdb/cdb_make.c      ident
+/ext/dba/libcdb/cdb.c           ident
+/run-tests.php                  ident
+
+# A custom merge driver to avoid automatic merges. These are manually merged.
+# See https://wiki.php.net/vcs/gitfaq
+/NEWS                merge=NEWS
+/UPGRADING           merge=NEWS
+/UPGRADING.INTERNALS merge=NEWS
+
+# Configure proper diff drivers to improve the context lines in the output
+# of git diff and to improve token splitting for --word-diff.
+*.phpt diff=php
+*.php diff=php
+*.[ch] diff=cpp
+
+# Collapse generated files within git and pull request diff.
+**/*_arginfo.h linguist-generated -diff
+/main/debug_gdb_scripts.c linguist-generated -diff
+/Zend/zend_vm_execute.h linguist-generated -diff
+/Zend/zend_vm_handlers.h linguist-generated -diff
+/Zend/zend_vm_opcodes.[ch] linguist-generated -diff
+
+# The OSS fuzz files are binary
+/ext/date/tests/ossfuzz*.txt binary
+
+# Vendored libraries
+/ext/lexbor/lexbor linguist-vendored
+/ext/uri/uriparser linguist-vendored

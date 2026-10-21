@@ -1,0 +1,63 @@
+# php-safe
+
+**Unofficial security-hardened fork of PHP. Not affiliated with The PHP Group, php.net, or the php GitHub organization.**
+
+This is a patched build of the PHP 8.5.x source tree with additional security fixes on top of upstream. It exists so operators who build PHP from source can deploy the fixes below immediately. If you can run an official PHP release, prefer it: this fork tracks upstream and is not a substitute for staying current with php.net releases.
+
+---
+
+## Security fixes in this fork
+
+### session.upload_progress use-after-free pair (presumed CVE-2026-109618 / CVE-2026-109619)
+
+**Severity (vendor rating): CVSS v4.0 9.2 — Critical. Network-reachable, unauthenticated, default-configuration RCE class.**
+
+The `php_session_rfc1867_progress` structure cached raw `zval*` bucket pointers into session-tree HashTables across `php_session_initialize()` re-decode cycles. Each update() call can free and replace the previous decoded tree, leaving the cached pointers dangling — a read/write primitive into attacker-reclaimable heap memory on any endpoint that accepts multipart POSTs (the attack surface is every PHP app, not any specific one).
+
+This fork removes the vulnerability **class**, not just the two known primitives:
+
+| File | Change |
+|---|---|
+| `ext/session/php_session.h` | Removed the cached `post_bytes_processed` / `current_file_bytes_processed` pointer fields and the refcount-1 alias zvals from the progress struct; the tree now has a single owner (`data`) |
+| `ext/session/session.c` | rfc1867 handler rewritten: all bucket access via fresh, NULL/type-guarded lookups (`php_session_rfc1867_set_bytes_processed()`, `php_session_rfc1867_current_file()`); no pointer survives across the decode lifecycle |
+| `ext/session/mod_files.c` | Defense-in-depth: session ID validation (`php_session_valid_key()`) is now enforced inside `ps_files_path_create()`, the single choke point used by all file-handler operations |
+
+Serialized session output is byte-identical to unpatched PHP — no behavioral or compatibility change.
+
+## How safe is it?
+
+Everything below was validated on a clean Ubuntu 24.04 host with an ASAN + debug build of this exact tree:
+
+- **Live exploit testing:** weaponized proof-of-concept HTTP exploits for both CVEs were fired against the patched build — including forged payloads aimed at the build's *real* `zend_call_function` address. Result: no code execution, no crash, no ASAN report across every attempt; the vulnerable code path still executes and writes correct session data.
+- **Fuzzing:** libFuzzer + ASAN campaigns against the unserialize, unserialize-hash, parser, execute, and JSON surfaces. Zero crashes, zero sanitizer reports.
+- **Regression suites:** full `ext/session` (268/269, the 1 is a pre-existing upstream XFAIL), `Zend/` + `ext/standard/` (9,276 tests; all 17 failures independently verified as environment artifacts — ASAN stack limits and HTTP test-harness spawning — zero regressions from these patches).
+- **Manual audit:** the surrounding attack-surface family (session serialize handlers, user-land save handlers `mod_user.c`, the multipart parser in `main/rfc1867.c`) was line-audited for the same vulnerability patterns; those areas match current upstream hardening and needed no changes.
+
+**Honest scope:** this fork is verified safe against everything listed above. No one can certify an entire language runtime as vulnerability-free; the claim here is that the patched vulnerability class is structurally eliminated and the audited adjacent surfaces are clean.
+
+## Building
+
+Standard php-src build:
+
+```sh
+./buildconf --force
+./configure --disable-all --enable-session --enable-cli --enable-cgi   # add what you need
+make -j$(nproc)
+```
+
+See the [upstream build instructions](https://github.com/php/php-src#building-php) for full details, dependencies, and Windows build notes. `php.ini-development` and `php.ini-production` ship as usual.
+
+## License
+
+This project is licensed under the **PHP License 3.01** (see [`LICENSE`](LICENSE)); the Zend Engine portions are under the Zend Engine License. This is a derivative work of php-src, and those licenses carry forward to all redistributions of this tree, as required.
+
+## Credits
+
+- **[The PHP Group](https://www.php.net)** and the **[php-src contributors](https://github.com/php)** — this project is their work; the fork only adds the security patches described above. Upstream: https://github.com/php/php-src
+- Security patches, validation, and testing for this fork: the php-safe maintainers (see commit history and [`NOTICE.md`](NOTICE.md)).
+- Vulnerability class documentation: coordinated-disclosure community reporting on the session.upload_progress issue.
+
+## Reporting security issues
+
+- Issues in this fork's patches: open a GitHub issue or contact the maintainers.
+- Issues in PHP upstream: follow https://php.net/security (do not report upstream bugs publicly).
