@@ -30,7 +30,7 @@ Serialized session output is byte-identical to unpatched PHP — no behavioral o
 
 | File | Change |
 |---|---|
-| `ext/gd/libgd/gdft.c` | `any2eupjp()`/`any2eucjp()` failure is now honored: rendering aborts with a clean error instead of drawing from the uninitialized buffer |
+| `ext/gd/libgd/gdft.c` | `any2eucjp()` failure is now honored: rendering aborts with a clean error instead of drawing from the uninitialized buffer |
 | `ext/gd/libgd/gdkanji.c` | kana expansion loop stops one byte early, keeping both written bytes in bounds |
 
 Verified: `imagettftext()` with ≥8 KB SJIS text now fails cleanly (no uninitialized render), normal rendering unaffected, full `ext/gd` suite 307/307.
