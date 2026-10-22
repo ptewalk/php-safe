@@ -24,6 +24,29 @@ This fork removes the vulnerability **class**, not just the two known primitives
 
 Serialized session output is byte-identical to unpatched PHP — no behavioral or compatibility change.
 
+### Uninitialized heap render in bundled libgd text rendering (CWE-908)
+
+`gdImageStringFTEx()` routes text through bundled libgd's Japanese conversion helpers. `gdft.c` ignored `any2eucjp()`'s error return, and on inputs of 8192 bytes or more the destination buffer was left **entirely uninitialized** — the renderer then walked and drew uninitialized heap memory into the image (heap info disclosure to anyone who can view a rendered image, reachable from `imagettftext()`). Additionally, `gdkanji.c`'s half-width→full-width kana expansion performed a two-byte write guarded by a one-byte bound, allowing a single byte to be written past the end of a static buffer.
+
+| File | Change |
+|---|---|
+| `ext/gd/libgd/gdft.c` | `any2eupjp()`/`any2eucjp()` failure is now honored: rendering aborts with a clean error instead of drawing from the uninitialized buffer |
+| `ext/gd/libgd/gdkanji.c` | kana expansion loop stops one byte early, keeping both written bytes in bounds |
+
+Verified: `imagettftext()` with ≥8 KB SJIS text now fails cleanly (no uninitialized render), normal rendering unaffected, full `ext/gd` suite 307/307.
+
+### NULL URI destroy on failed construction (ext/uri)
+
+Every `Uri\WhatWg\Url` object whose construction failed — a throwing constructor, a failed silent `parse()` factory call, or a rejected `__unserialize()` payload — was destroyed with a NULL internal URI, and `php_uri_object_handler_free()` forwarded that NULL to the parser's `destroy()`. Two of the three parsers (`Rfc3986`, `php_parse_url`) explicitly tolerate NULL; the WHATWG parser passed it straight to the external lexbor API, relying on undocumented third-party behavior (a lexbor update could turn this into a remotely triggerable NULL dereference on every failed URL construction).
+
+| File | Change |
+|---|---|
+| `ext/uri/php_uri.c` | `php_uri_object_handler_free()` — the single free path for all URI objects — now guards the NULL case |
+| `ext/uri/uri_parser_whatwg.c` | `destroy()` guards NULL like its two sibling parsers |
+| `ext/uri/tests/103_free_null_uri.phpt` | regression test covering all three reachable paths |
+
+Verified differentially under gdb: before the fix, `lxb_url_destroy(url=0x0)` fired during exception unwinding of a failed construction; after the fix the call never happens. Full `ext/uri` suite 328/328.
+
 ## How safe is it?
 
 Everything below was validated on a clean Ubuntu 24.04 host with an ASAN + debug build of this exact tree:
@@ -32,6 +55,8 @@ Everything below was validated on a clean Ubuntu 24.04 host with an ASAN + debug
 - **Fuzzing:** libFuzzer + ASAN campaigns against the unserialize, unserialize-hash, parser, execute, and JSON surfaces. Zero crashes, zero sanitizer reports.
 - **Regression suites:** full `ext/session` (268/269, the 1 is a pre-existing upstream XFAIL), `Zend/` + `ext/standard/` (9,276 tests; all 17 failures independently verified as environment artifacts — ASAN stack limits and HTTP test-harness spawning — zero regressions from these patches).
 - **Manual audit:** the surrounding attack-surface family (session serialize handlers, user-land save handlers `mod_user.c`, the multipart parser in `main/rfc1867.c`) was line-audited for the same vulnerability patterns; those areas match current upstream hardening and needed no changes.
+- **Real-world app validation:** Laravel 13.38 installs, migrates (sqlite) and serves on this fork with all framework tests of the install path green; session layers verified on both `database` and `file` drivers — the file driver exercises this fork's rewritten `mod_files.c` directly.
+- **Fork-integrity manifest:** a 27,010-file md5 manifest of this tree versus the upstream `php-8.5.12` tag confirms the fork differs from upstream **only** by the patched files listed above (plus README/LICENSE/NOTICE attribution).
 
 **Honest scope:** this fork is verified safe against everything listed above. No one can certify an entire language runtime as vulnerability-free; the claim here is that the patched vulnerability class is structurally eliminated and the audited adjacent surfaces are clean.
 
