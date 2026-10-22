@@ -693,6 +693,10 @@ static void php_uri_parser_whatwg_destroy(void *uri)
 {
 	lxb_url_t *lexbor_uri = uri;
 
+	if (UNEXPECTED(lexbor_uri == NULL)) {
+		return;
+	}
+
 	lxb_url_destroy(lexbor_uri);
 }
 

@@ -1054,6 +1054,15 @@ PHPAPI void php_uri_object_handler_free(zend_object *object)
 {
 	php_uri_object *uri_object = php_uri_object_from_obj(object);
 
+	/* The URI may be NULL when construction failed (e.g. a parse error in the
+	 * constructor, a factory method or __unserialize()), so the object is
+	 * destroyed without ever having parsed a URI. Not every parser's destroy()
+	 * implementation is required to tolerate NULL. */
+	if (UNEXPECTED(uri_object->uri == NULL)) {
+		zend_object_std_dtor(&uri_object->std);
+		return;
+	}
+
 	uri_object->parser->destroy(uri_object->uri);
 	zend_object_std_dtor(&uri_object->std);
 }
