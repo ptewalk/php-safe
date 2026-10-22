@@ -513,7 +513,9 @@ do_check_and_conv (unsigned char *to, unsigned char *from)
   if (kanji)
     {
       j = 0;
-      for (i = 0; tmp[i] != '\0' && j < BUFSIZ; i++)
+      /* The Hankaku --> Zenkaku case below writes two bytes per iteration,
+       * so stop one byte early to keep to[j] and to[j + 1] in bounds. */
+      for (i = 0; tmp[i] != '\0' && j < BUFSIZ - 1; i++)
 	{
 	  if (tmp[i] == SS2)
 	    {

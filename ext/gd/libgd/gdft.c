@@ -973,7 +973,13 @@ gdImageStringFTEx (gdImage * im, int *brect, int fg, char *fontlist, double ptsi
 	if (font->have_char_map_sjis) {
 #endif
 		tmpstr = (char *) gdMalloc(BUFSIZ);
-		any2eucjp(tmpstr, string, BUFSIZ);
+		if (any2eucjp(tmpstr, string, BUFSIZ) < 0) {
+			/* any2eucjp() may bail out without writing to tmpstr; do not
+			 * render from the uninitialized buffer (heap info leak). */
+			gdFree(tmpstr);
+			gdMutexUnlock(gdFontCacheMutex);
+			return "Error converting string to EUC-JP";
+		}
 		next = tmpstr;
 #ifndef JISX0208
 	} else {
